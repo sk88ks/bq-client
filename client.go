@@ -237,7 +237,6 @@ func Convert(fields []*bigquery.TableFieldSchema, rows []*bigquery.TableRow, res
 			var isSet bool
 			record, ok := rows[i].F[j].V.(string)
 			if !ok {
-				isSet = true
 				continue
 			}
 
@@ -293,11 +292,10 @@ func Convert(fields []*bigquery.TableFieldSchema, rows []*bigquery.TableRow, res
 			}
 
 			if !isSet {
-				errors.New("Invalid elememt type")
+				return errors.New("Invalid elememt type")
 			}
 		}
 		sliceV = reflect.Append(sliceV, elemP.Elem())
-		sliceV = sliceV.Slice(0, sliceV.Cap())
 		count++
 	}
 	resultV.Elem().Set(sliceV.Slice(0, count))
