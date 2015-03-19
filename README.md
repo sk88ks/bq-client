@@ -6,7 +6,7 @@ This works on progress.
 
 Current API Documents:
 
-* go-worker: [![GoDoc](https://godoc.org/github.com/sk88ks/bq-client?status.svg)](https://godoc.org/github.com/sk88ks/bq-client)
+* bq-client: [![GoDoc](https://godoc.org/github.com/sk88ks/bq-client?status.svg)](https://godoc.org/github.com/sk88ks/bq-client)
 
 Installation
 ----
