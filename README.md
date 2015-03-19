@@ -1,7 +1,7 @@
 bq-client
 =========
 
-Bq-client is a client for Google bigquery with gokang.
+Bq-client is a client for Google bigquery with golang.
 This works on progress.
 
 Current API Documents:
