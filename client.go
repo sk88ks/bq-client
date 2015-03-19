@@ -229,12 +229,13 @@ func Convert(fields []*bigquery.TableFieldSchema, rows []*bigquery.TableRow, res
 	var count int
 	for i := 0; i < len(rows); i++ {
 		if elemT.NumField() != len(rows[i].F) {
-			return errors.New("Invalid result elememt")
+			return errors.New("Invalid result element")
 		}
 		elemP := reflect.New(elemT)
 		for j := 0; j < len(rows[i].F); j++ {
 			elemF := elemP.Elem().Field(j)
-			record := rows[i].F[j].V.(string)
+			// Empty string is set if assertion failed
+			record, _ := rows[i].F[j].V.(string)
 			var isSet bool
 
 			switch fields[j].Type {
