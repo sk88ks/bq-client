@@ -1,5 +1,8 @@
 bq-client
 =========
+ 
+[![Build Status](https://travis-ci.org/sk88ks/bq-client.svg?branch=master)](https://travis-ci.org/sk88ks/bq-client)
+[![Coverage Status](https://coveralls.io/repos/sk88ks/bq-client/badge.svg?branch=master)](https://coveralls.io/r/sk88ks/bq-client?branch=master)
 
 Bq-client is a client for Google bigquery with golang.
 This works on progress.
