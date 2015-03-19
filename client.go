@@ -234,9 +234,12 @@ func Convert(fields []*bigquery.TableFieldSchema, rows []*bigquery.TableRow, res
 		elemP := reflect.New(elemT)
 		for j := 0; j < len(rows[i].F); j++ {
 			elemF := elemP.Elem().Field(j)
-			// Empty string is set if assertion failed
-			record, _ := rows[i].F[j].V.(string)
 			var isSet bool
+			record, ok := rows[i].F[j].V.(string)
+			if !ok {
+				isSet = true
+				continue
+			}
 
 			switch fields[j].Type {
 			case fieldTypeString:

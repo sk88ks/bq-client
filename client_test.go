@@ -188,16 +188,16 @@ func TestConvert(t *testing.T) {
 						V: nil,
 					},
 					{
-						V: "26",
+						V: nil,
 					},
 					{
-						V: "12.34",
+						V: nil,
 					},
 					{
-						V: "1.422943323461E9",
+						V: nil,
 					},
 					{
-						V: "true",
+						V: nil,
 					},
 				},
 			},
@@ -212,10 +212,10 @@ func TestConvert(t *testing.T) {
 				So(err, ShouldBeNil)
 				So(len(res), ShouldEqual, 1)
 				So(res[0].Name, ShouldEqual, "")
-				So(res[0].Age, ShouldEqual, 26)
-				So(res[0].Score, ShouldEqual, 12.34)
-				So(res[0].Timestamp, ShouldEqual, 1422943323461)
-				So(res[0].IsDeleted, ShouldEqual, true)
+				So(res[0].Age, ShouldEqual, 0)
+				So(res[0].Score, ShouldEqual, 0.0)
+				So(res[0].Timestamp, ShouldEqual, 0)
+				So(res[0].IsDeleted, ShouldEqual, false)
 
 			})
 		})
