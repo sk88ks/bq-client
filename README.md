@@ -46,6 +46,7 @@ func main() {
 	bqClient.Dataset(gcpProject, bqDataset)
 	
 	var res []Response
+	query := "SELECT * FROM test.test_table WHERE num > 0"
 	err = bqClient.Query(query, &res)
   fmt.Println(res)
 	
