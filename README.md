@@ -31,7 +31,7 @@ type Response struct {
 }
 
 const (
- ketPath = "pathToKeyPemfile"
+ keyPath = "pathToKeyPemfile"
  accountEmail = "your account email"
  gcpProject = "your gcp projact ID"
  bqDataset = "your data set name"
@@ -42,7 +42,7 @@ func main() {
 	if err != nil {
 		return err
 	}
-	bqClient = bqc.New(accountEmail, key, "")
+	bqClient := bqc.New(accountEmail, key, "")
 	bqClient.Dataset(gcpProject, bqDataset)
 	
 	var res []Response
