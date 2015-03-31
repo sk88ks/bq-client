@@ -91,41 +91,6 @@ func (c *Client) Query(queryString string, result interface{}) error {
 	return nil
 }
 
-// QueryAsync execute query and return resuponse asyncronously
-func (c *Client) QueryAsync(queryString string, resultChan interface{}, finishChan chan bool, errChan chan error) {
-	chanV := reflect.ValueOf(resultChan)
-	if chanV.Kind() != reflect.Chan {
-		errChan <- errors.New("Invalid type result channel")
-		return
-	}
-
-	chanT := chanV.Type().Elem()
-
-	responseChan := make(chan ResponseData, 1)
-	go c.retrieveRows(queryString, 1, responseChan)
-
-	for {
-		select {
-		case data := <-responseChan:
-			if data.Err != nil {
-				errChan <- data.Err
-				return
-			}
-			res := reflect.New(chanT)
-			err := Convert(data.Fields, data.Rows, res.Interface())
-			if err != nil {
-				errChan <- data.Err
-				return
-			}
-			chanV.Send(res.Elem())
-			if data.AllRows {
-				finishChan <- true
-				return
-			}
-		}
-	}
-}
-
 func (c *Client) retrieveRows(queryString string, size int64, receiver chan ResponseData) ([]*bigquery.TableFieldSchema, []*bigquery.TableRow, error) {
 	service, err := c.getService()
 	if err != nil {
