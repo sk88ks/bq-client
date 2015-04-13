@@ -156,13 +156,17 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 
 		if qrr.JobComplete && rowCount >= qrr.TotalRows {
 			res.AllRows = true
-			receiver <- res
+			if receiver != nil {
+				receiver <- res
+			}
 			return res.Fields, res.Rows, nil
 		}
 
 		if qrr.JobComplete {
 			rowCount += uint64(len(qrr.Rows))
-			receiver <- res
+			if receiver != nil {
+				receiver <- res
+			}
 		}
 
 		if qrr.JobReference != nil {
