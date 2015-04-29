@@ -150,8 +150,11 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 		}
 
 		res := ResponseData{
-			Fields: qrr.Schema.Fields,
-			Rows:   qrr.Rows,
+			Rows: qrr.Rows,
+		}
+
+		if qrr.Schema != nil {
+			res.Fields = qrr.Schema.Fields
 		}
 
 		if qrr.JobComplete && rowCount >= qrr.TotalRows {
