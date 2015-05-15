@@ -133,7 +133,8 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 
 	jobRef := qr.JobReference
 	pageToken := qr.PageToken
-	var rowCount uint64
+	rows := make([]*bigquery.TableRow, 0, int(qr.TotalRows))
+	rows = append(rows, qr.Rows...)
 	for {
 		qrc := service.Jobs.GetQueryResults(jobRef.ProjectId, jobRef.JobId)
 		if len(pageToken) != 0 {
@@ -157,19 +158,21 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 			res.Fields = qrr.Schema.Fields
 		}
 
-		if qrr.JobComplete && rowCount >= qrr.TotalRows {
+		if qrr.JobComplete {
+			rows = append(rows, qrr.Rows...)
+			if receiver != nil {
+				res.Rows = rows
+				receiver <- res
+			}
+		}
+
+		if qrr.JobComplete && uint64(len(rows)) >= qrr.TotalRows {
 			res.AllRows = true
+			res.Rows = rows
 			if receiver != nil {
 				receiver <- res
 			}
 			return res.Fields, res.Rows, nil
-		}
-
-		if qrr.JobComplete {
-			rowCount += uint64(len(qrr.Rows))
-			if receiver != nil {
-				receiver <- res
-			}
 		}
 
 		if qrr.JobReference != nil {
