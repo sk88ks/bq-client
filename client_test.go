@@ -293,7 +293,7 @@ func TestConvert(t *testing.T) {
 				So(res[0].Name, ShouldEqual, "test_name")
 				So(res[0].Age, ShouldEqual, 26)
 				So(res[0].Score, ShouldEqual, 12.34)
-				So(res[0].Timestamp, ShouldEqual, 1422943323461)
+				So(res[0].Timestamp, ShouldEqual, 1422943323)
 				So(res[0].IsDeleted, ShouldEqual, true)
 
 			})

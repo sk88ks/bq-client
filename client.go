@@ -170,6 +170,7 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 			res.AllRows = true
 			res.Rows = rows
 			if receiver != nil {
+				res.Rows = rows
 				receiver <- res
 			}
 			return res.Fields, res.Rows, nil
@@ -287,7 +288,10 @@ func convertExpornent(ex string) (int64, error) {
 	if dIndex < 0 {
 		return 0, errors.New("Invalid timestamp format")
 	}
-	e := len(ex[:eIndex][dIndex+1:])
+	e, err := strconv.Atoi(ex[eIndex+1:])
+	if err != nil {
+		return 0, errors.New("Invalid timestamp format")
+	}
 
 	base, err := strconv.ParseFloat(ex[:eIndex], 64)
 	if err != nil {
