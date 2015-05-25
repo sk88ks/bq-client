@@ -299,3 +299,35 @@ func convertExpornent(ex string) (int64, error) {
 	}
 	return int64(base * math.Pow10(e)), nil
 }
+
+// InsertRowsByJSON inserts a new row into the desired project, dataset and table or returns an error
+func (c *Client) InsertRowsByJSON(tableID string, rows []map[string]interface{}) error {
+	service, err := c.getService()
+	if err != nil {
+		return err
+	}
+
+	requestRows := make([]*bigquery.TableDataInsertAllRequestRows, 0, len(rows))
+	for i := range rows {
+		data := make(map[string]bigquery.JsonValue, len(rows[i]))
+		for key := range rows[i] {
+			data[key] = bigquery.JsonValue(rows[i][key])
+		}
+		requestRows = append(requestRows, &bigquery.TableDataInsertAllRequestRows{
+			Json: data,
+		})
+	}
+
+	insertRequest := &bigquery.TableDataInsertAllRequest{Rows: requestRows}
+
+	result, err := service.Tabledata.InsertAll(c.datasetRef.ProjectId, c.datasetRef.DatasetId, tableID, insertRequest).Do()
+	if err != nil {
+		return err
+	}
+
+	if len(result.InsertErrors) > 0 {
+		return errors.New("Failed to insert")
+	}
+
+	return nil
+}
