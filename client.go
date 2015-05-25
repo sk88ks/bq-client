@@ -8,9 +8,10 @@ import (
 	"strconv"
 	"strings"
 
+	bigquery "github.com/google/google-api-go-client/bigquery/v2"
+
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/jwt"
-	bigquery "google.golang.org/api/bigquery/v2"
 )
 
 const (
