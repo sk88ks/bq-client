@@ -31,6 +31,20 @@ type Client struct {
 	jwtConfig  *jwt.Config
 	datasetRef *bigquery.DatasetReference
 	service    *bigquery.Service
+	JobConfig  *JobConfiguration
+}
+
+// JobConfiguration for bigquery client
+type JobConfiguration struct {
+	AllowLargeResults bool
+	TempTableName     string
+	// WRITE_TRUNCATE
+	// WRITE_APPEND
+	// WRITE_EMPTY
+	WriteDisposition string
+	// CREATE_IF_NEEDED
+	// CREATE_NEVER
+	CreateDisposition string
 }
 
 // ResponseData is a data set for response from bigquery
@@ -82,9 +96,20 @@ func (c *Client) Dataset(projectID string, datasetID string) *Client {
 	return c
 }
 
+// SetJobConfig sets job Configuration
+func (c *Client) SetJobConfig(config *JobConfiguration) *Client {
+	c.JobConfig = config
+	return c
+}
+
 // Query execute a given query
 func (c *Client) Query(queryString string, result interface{}) error {
-	fields, rows, err := c.retrieveRows(queryString, defaultPageSize, nil)
+	var fields []*bigquery.TableFieldSchema
+	var rows []*bigquery.TableRow
+	var err error
+	if c.JobConfig != nil {
+		fields, rows, err = c.retrieveRowsWithJobConfig(queryString, defaultPageSize, nil)
+	}
 	if err != nil {
 		return err
 	}
@@ -133,6 +158,113 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 	}
 
 	jobRef := qr.JobReference
+	pageToken := qr.PageToken
+	rows := make([]*bigquery.TableRow, 0, int(qr.TotalRows))
+	rows = append(rows, qr.Rows...)
+	for {
+		qrc := service.Jobs.GetQueryResults(jobRef.ProjectId, jobRef.JobId)
+		if len(pageToken) != 0 {
+			qrc.PageToken(pageToken)
+		}
+		qrr, err := qrc.Do()
+		if err != nil {
+			if receiver != nil {
+				receiver <- ResponseData{
+					Err: err,
+				}
+			}
+			return nil, nil, err
+		}
+
+		res := ResponseData{
+			Rows: qrr.Rows,
+		}
+
+		if qrr.Schema != nil {
+			res.Fields = qrr.Schema.Fields
+		}
+
+		if qrr.JobComplete {
+			rows = append(rows, qrr.Rows...)
+			if receiver != nil {
+				res.Rows = rows
+				receiver <- res
+			}
+		}
+
+		if qrr.JobComplete && uint64(len(rows)) >= qrr.TotalRows {
+			res.AllRows = true
+			res.Rows = rows
+			if receiver != nil {
+				res.Rows = rows
+				receiver <- res
+			}
+			return res.Fields, res.Rows, nil
+		}
+
+		if qrr.JobReference != nil {
+			jobRef = qrr.JobReference
+			pageToken = qrr.PageToken
+		}
+	}
+}
+
+func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, receiver chan ResponseData) ([]*bigquery.TableFieldSchema, []*bigquery.TableRow, error) {
+	service, err := c.getService()
+	if err != nil {
+		if receiver != nil {
+			receiver <- ResponseData{
+				Err: err,
+			}
+		}
+		return nil, nil, err
+	}
+
+	jobConfigQuery := bigquery.JobConfigurationQuery{
+		Query: queryString,
+	}
+	if c.JobConfig != nil {
+		jobConfigQuery.AllowLargeResults = c.JobConfig.AllowLargeResults
+		jobConfigQuery.WriteDisposition = c.JobConfig.WriteDisposition
+		jobConfigQuery.CreateDisposition = c.JobConfig.CreateDisposition
+		jobConfigQuery.DestinationTable = &bigquery.TableReference{DatasetId: c.datasetRef.DatasetId, ProjectId: c.datasetRef.ProjectId, TableId: c.JobConfig.TempTableName}
+	}
+
+	job := bigquery.Job{
+		Configuration: &bigquery.JobConfiguration{
+			Query: &jobConfigQuery,
+		},
+	}
+
+	insertedJob, err := service.Jobs.Insert(c.datasetRef.ProjectId, &job).Do()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	qr, err := service.Jobs.GetQueryResults(c.datasetRef.ProjectId, insertedJob.JobReference.JobId).Do()
+	if err != nil {
+		if receiver != nil {
+			receiver <- ResponseData{
+				Err: err,
+			}
+		}
+		return nil, nil, err
+	}
+
+	if qr.JobComplete && qr.TotalRows <= uint64(size) {
+		if receiver != nil {
+			receiver <- ResponseData{
+				Fields:  qr.Schema.Fields,
+				Rows:    qr.Rows,
+				AllRows: true,
+			}
+		}
+
+		return qr.Schema.Fields, qr.Rows, nil
+	}
+
+	//jobRef := qr.JobReference
+	jobRef := insertedJob.JobReference
 	pageToken := qr.PageToken
 	rows := make([]*bigquery.TableRow, 0, int(qr.TotalRows))
 	rows = append(rows, qr.Rows...)
