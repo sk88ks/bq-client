@@ -26,6 +26,20 @@ const (
 	fieldTypeTimestamp = "TIMESTAMP"
 )
 
+const (
+	// WriteTruncate is truncate option
+	WriteTruncate WriteDisp = "WRITE_TRUNCATE"
+	// WriteAppend is append option
+	WriteAppend WriteDisp = "WRITE_APPEND"
+	// WriteEmpty is empty option
+	WriteEmpty WriteDisp = "WRITE_EMPTY"
+
+	// CreateIfNeeded is option to create a new if table not exists
+	CreateIfNeeded CreateDisp = "CREATE_IF_NEEDED"
+	// CreateNever is option not to create a new table
+	CreateNever CreateDisp = "CREATE_NEVER"
+)
+
 // Client is a client for google bigquery
 type Client struct {
 	jwtConfig  *jwt.Config
@@ -34,25 +48,26 @@ type Client struct {
 	JobConfig  *JobConfiguration
 }
 
+// WriteDisp expresses create disposition
+type WriteDisp string
+
+// CreateDisp expresses create disposition
+type CreateDisp string
+
 // JobConfiguration for bigquery client
 type JobConfiguration struct {
 	AllowLargeResults bool
 	TempTableName     string
-	// WRITE_TRUNCATE
-	// WRITE_APPEND
-	// WRITE_EMPTY
-	WriteDisposition string
-	// CREATE_IF_NEEDED
-	// CREATE_NEVER
-	CreateDisposition string
+	WriteDisposition  WriteDisp
+	CreateDisposition CreateDisp
 }
 
 // ResponseData is a data set for response from bigquery
 type ResponseData struct {
-	Fields  []*bigquery.TableFieldSchema
-	Rows    []*bigquery.TableRow
-	AllRows bool
-	Err     error
+	Fields    []*bigquery.TableFieldSchema
+	Rows      []*bigquery.TableRow
+	IsAllRows bool
+	Err       error
 }
 
 // GetPrivateKeyByPEM gets a byte slice as key from a given PEM file
@@ -119,6 +134,16 @@ func (c *Client) Query(queryString string, result interface{}) error {
 	return nil
 }
 
+// QueryWithChannel execute a given query with chan
+// Channel has ResponseData that can be converted to optional struct array with Convert
+func (c *Client) QueryWithChannel(queryString string, size int64, resChan chan ResponseData) {
+	if c.JobConfig != nil {
+		go c.retrieveRowsWithJobConfig(queryString, size, resChan)
+	} else {
+		go c.retrieveRows(queryString, size, resChan)
+	}
+}
+
 func (c *Client) retrieveRows(queryString string, size int64, receiver chan ResponseData) ([]*bigquery.TableFieldSchema, []*bigquery.TableRow, error) {
 	service, err := c.getService()
 	if err != nil {
@@ -150,19 +175,28 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 	if qr.JobComplete && qr.TotalRows <= uint64(size) {
 		if receiver != nil {
 			receiver <- ResponseData{
-				Fields:  qr.Schema.Fields,
-				Rows:    qr.Rows,
-				AllRows: true,
+				Fields:    qr.Schema.Fields,
+				Rows:      qr.Rows,
+				IsAllRows: true,
 			}
 		}
 
 		return qr.Schema.Fields, qr.Rows, nil
 	}
 
+	rows := make([]*bigquery.TableRow, 0, int(qr.TotalRows))
+	if receiver != nil {
+		receiver <- ResponseData{
+			Rows:   qr.Rows,
+			Fields: qr.Schema.Fields,
+		}
+	} else {
+		rows = append(rows, qr.Rows...)
+	}
+	rowCount := len(qr.Rows)
+
 	jobRef := qr.JobReference
 	pageToken := qr.PageToken
-	rows := make([]*bigquery.TableRow, 0, int(qr.TotalRows))
-	rows = append(rows, qr.Rows...)
 	for {
 		qrc := service.Jobs.GetQueryResults(jobRef.ProjectId, jobRef.JobId)
 		if len(pageToken) != 0 {
@@ -178,30 +212,25 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 			return nil, nil, err
 		}
 
-		res := ResponseData{
-			Rows: qrr.Rows,
-		}
+		res := ResponseData{}
 
 		if qrr.Schema != nil {
 			res.Fields = qrr.Schema.Fields
 		}
 
 		if qrr.JobComplete {
-			rows = append(rows, qrr.Rows...)
+			rowCount += len(qrr.Rows)
 			if receiver != nil {
-				res.Rows = rows
+				res.Rows = qrr.Rows
+				res.IsAllRows = uint64(rowCount) >= qrr.TotalRows
 				receiver <- res
+			} else {
+				rows = append(rows, qrr.Rows...)
 			}
 		}
 
-		if qrr.JobComplete && uint64(len(rows)) >= qrr.TotalRows {
-			res.AllRows = true
-			res.Rows = rows
-			if receiver != nil {
-				res.Rows = rows
-				receiver <- res
-			}
-			return res.Fields, res.Rows, nil
+		if qrr.JobComplete && uint64(rowCount) >= qrr.TotalRows {
+			return res.Fields, rows, nil
 		}
 
 		if qrr.JobReference != nil {
@@ -227,8 +256,8 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 	}
 	if c.JobConfig != nil {
 		jobConfigQuery.AllowLargeResults = c.JobConfig.AllowLargeResults
-		jobConfigQuery.WriteDisposition = c.JobConfig.WriteDisposition
-		jobConfigQuery.CreateDisposition = c.JobConfig.CreateDisposition
+		jobConfigQuery.WriteDisposition = string(c.JobConfig.WriteDisposition)
+		jobConfigQuery.CreateDisposition = string(c.JobConfig.CreateDisposition)
 		jobConfigQuery.DestinationTable = &bigquery.TableReference{DatasetId: c.datasetRef.DatasetId, ProjectId: c.datasetRef.ProjectId, TableId: c.JobConfig.TempTableName}
 	}
 
@@ -256,20 +285,28 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 	if qr.JobComplete && qr.TotalRows <= uint64(size) {
 		if receiver != nil {
 			receiver <- ResponseData{
-				Fields:  qr.Schema.Fields,
-				Rows:    qr.Rows,
-				AllRows: true,
+				Fields:    qr.Schema.Fields,
+				Rows:      qr.Rows,
+				IsAllRows: true,
 			}
 		}
 
 		return qr.Schema.Fields, qr.Rows, nil
 	}
 
-	//jobRef := qr.JobReference
+	rows := make([]*bigquery.TableRow, 0, int(qr.TotalRows))
+	if receiver != nil {
+		receiver <- ResponseData{
+			Rows:   qr.Rows,
+			Fields: qr.Schema.Fields,
+		}
+	} else {
+		rows = append(rows, qr.Rows...)
+	}
+	rowCount := len(qr.Rows)
+
 	jobRef := insertedJob.JobReference
 	pageToken := qr.PageToken
-	rows := make([]*bigquery.TableRow, 0, int(qr.TotalRows))
-	rows = append(rows, qr.Rows...)
 	for {
 		qrc := service.Jobs.GetQueryResults(jobRef.ProjectId, jobRef.JobId)
 		if len(pageToken) != 0 {
@@ -285,30 +322,25 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 			return nil, nil, err
 		}
 
-		res := ResponseData{
-			Rows: qrr.Rows,
-		}
+		res := ResponseData{}
 
 		if qrr.Schema != nil {
 			res.Fields = qrr.Schema.Fields
 		}
 
 		if qrr.JobComplete {
-			rows = append(rows, qrr.Rows...)
+			rowCount += len(qrr.Rows)
 			if receiver != nil {
-				res.Rows = rows
+				res.Rows = qrr.Rows
+				res.IsAllRows = uint64(rowCount) >= qrr.TotalRows
 				receiver <- res
+			} else {
+				rows = append(rows, qrr.Rows...)
 			}
 		}
 
-		if qrr.JobComplete && uint64(len(rows)) >= qrr.TotalRows {
-			res.AllRows = true
-			res.Rows = rows
-			if receiver != nil {
-				res.Rows = rows
-				receiver <- res
-			}
-			return res.Fields, res.Rows, nil
+		if qrr.JobComplete && uint64(rowCount) >= qrr.TotalRows {
+			return res.Fields, rows, nil
 		}
 
 		if qrr.JobReference != nil {
