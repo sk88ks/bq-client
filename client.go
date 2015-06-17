@@ -109,6 +109,8 @@ func (c *Client) Query(queryString string, result interface{}) error {
 	var err error
 	if c.JobConfig != nil {
 		fields, rows, err = c.retrieveRowsWithJobConfig(queryString, defaultPageSize, nil)
+	} else {
+		fields, rows, err = c.retrieveRows(queryString, defaultPageSize, nil)
 	}
 	if err != nil {
 		return err
