@@ -64,10 +64,9 @@ type JobConfiguration struct {
 
 // ResponseData is a data set for response from bigquery
 type ResponseData struct {
-	Fields    []*bigquery.TableFieldSchema
-	Rows      []*bigquery.TableRow
-	IsAllRows bool
-	Err       error
+	Fields []*bigquery.TableFieldSchema
+	Rows   []*bigquery.TableRow
+	Err    error
 }
 
 // GetPrivateKeyByPEM gets a byte slice as key from a given PEM file
@@ -175,10 +174,10 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 	if qr.JobComplete && qr.TotalRows <= uint64(size) {
 		if receiver != nil {
 			receiver <- ResponseData{
-				Fields:    qr.Schema.Fields,
-				Rows:      qr.Rows,
-				IsAllRows: true,
+				Fields: qr.Schema.Fields,
+				Rows:   qr.Rows,
 			}
+			close(receiver)
 		}
 
 		return qr.Schema.Fields, qr.Rows, nil
@@ -225,7 +224,6 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 			rowCount += len(qrr.Rows)
 			if receiver != nil {
 				res.Rows = qrr.Rows
-				res.IsAllRows = uint64(rowCount) >= qrr.TotalRows
 				receiver <- res
 			} else {
 				rows = append(rows, qrr.Rows...)
@@ -233,6 +231,9 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 		}
 
 		if qrr.JobComplete && uint64(rowCount) >= qrr.TotalRows {
+			if receiver != nil {
+				close(receiver)
+			}
 			return res.Fields, rows, nil
 		}
 
@@ -288,10 +289,10 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 	if qr.JobComplete && qr.TotalRows <= uint64(size) {
 		if receiver != nil {
 			receiver <- ResponseData{
-				Fields:    qr.Schema.Fields,
-				Rows:      qr.Rows,
-				IsAllRows: true,
+				Fields: qr.Schema.Fields,
+				Rows:   qr.Rows,
 			}
+			close(receiver)
 		}
 
 		return qr.Schema.Fields, qr.Rows, nil
@@ -335,7 +336,6 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 			if receiver != nil {
 				res.Rows = qrr.Rows
 				res.Fields = qrr.Schema.Fields
-				res.IsAllRows = uint64(rowCount) >= qrr.TotalRows
 				receiver <- res
 			} else {
 				rows = append(rows, qrr.Rows...)
@@ -343,6 +343,9 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 		}
 
 		if qrr.JobComplete && uint64(rowCount) >= qrr.TotalRows {
+			if receiver != nil {
+				close(receiver)
+			}
 			return res.Fields, rows, nil
 		}
 
