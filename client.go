@@ -184,16 +184,19 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 		return qr.Schema.Fields, qr.Rows, nil
 	}
 
+	var rowCount int
 	rows := make([]*bigquery.TableRow, 0, int(qr.TotalRows))
-	if receiver != nil {
-		receiver <- ResponseData{
-			Rows:   qr.Rows,
-			Fields: qr.Schema.Fields,
+	if qr.JobComplete {
+		if receiver != nil {
+			receiver <- ResponseData{
+				Rows:   qr.Rows,
+				Fields: qr.Schema.Fields,
+			}
+		} else {
+			rows = append(rows, qr.Rows...)
 		}
-	} else {
-		rows = append(rows, qr.Rows...)
+		rowCount = len(qr.Rows)
 	}
-	rowCount := len(qr.Rows)
 
 	jobRef := qr.JobReference
 	pageToken := qr.PageToken
@@ -294,16 +297,19 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 		return qr.Schema.Fields, qr.Rows, nil
 	}
 
+	var rowCount int
 	rows := make([]*bigquery.TableRow, 0, int(qr.TotalRows))
-	if receiver != nil {
-		receiver <- ResponseData{
-			Rows:   qr.Rows,
-			Fields: qr.Schema.Fields,
+	if qr.JobComplete {
+		if receiver != nil {
+			receiver <- ResponseData{
+				Rows:   qr.Rows,
+				Fields: qr.Schema.Fields,
+			}
+		} else {
+			rows = append(rows, qr.Rows...)
 		}
-	} else {
-		rows = append(rows, qr.Rows...)
+		rowCount = len(qr.Rows)
 	}
-	rowCount := len(qr.Rows)
 
 	jobRef := insertedJob.JobReference
 	pageToken := qr.PageToken
@@ -324,14 +330,11 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 
 		res := ResponseData{}
 
-		if qrr.Schema != nil {
-			res.Fields = qrr.Schema.Fields
-		}
-
 		if qrr.JobComplete {
 			rowCount += len(qrr.Rows)
 			if receiver != nil {
 				res.Rows = qrr.Rows
+				res.Fields = qrr.Schema.Fields
 				res.IsAllRows = uint64(rowCount) >= qrr.TotalRows
 				receiver <- res
 			} else {
