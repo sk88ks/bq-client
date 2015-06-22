@@ -3,8 +3,8 @@ package client
 import (
 	"testing"
 
+	bigquery "github.com/google/google-api-go-client/bigquery/v2"
 	. "github.com/smartystreets/goconvey/convey"
-	"google.golang.org/api/bigquery/v2"
 )
 
 type convertRec struct {

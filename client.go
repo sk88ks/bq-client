@@ -45,7 +45,14 @@ type Client struct {
 	jwtConfig  *jwt.Config
 	datasetRef *bigquery.DatasetReference
 	service    *bigquery.Service
-	JobConfig  *JobConfiguration
+}
+
+// Query is a query with client
+type Query struct {
+	Client      *Client
+	QueryString string
+	JobConfig   *JobConfiguration
+	size        int64
 }
 
 // WriteDisp expresses create disposition
@@ -110,41 +117,53 @@ func (c *Client) Dataset(projectID string, datasetID string) *Client {
 	return c
 }
 
-// SetJobConfig sets job Configuration
-func (c *Client) SetJobConfig(config *JobConfiguration) *Client {
-	c.JobConfig = config
-	return c
+// Query issues a new query instance
+func (c *Client) Query(queryString string) *Query {
+	return &Query{
+		Client:      c,
+		QueryString: queryString,
+		size:        defaultPageSize,
+	}
 }
 
-// Query execute a given query
-func (c *Client) Query(queryString string, result interface{}) error {
+// SetJobConfig sets job Configuration
+func (q *Query) SetJobConfig(config *JobConfiguration) *Query {
+	q.JobConfig = config
+	return q
+}
+
+// Execute execute a given query
+func (q *Query) Execute(result interface{}) error {
 	var fields []*bigquery.TableFieldSchema
 	var rows []*bigquery.TableRow
 	var err error
-	if c.JobConfig != nil {
-		fields, rows, err = c.retrieveRowsWithJobConfig(queryString, defaultPageSize, nil)
+	if q.JobConfig != nil {
+		fields, rows, err = q.retrieveRowsWithJobConfig(nil)
 	} else {
-		fields, rows, err = c.retrieveRows(queryString, defaultPageSize, nil)
+		fields, rows, err = q.retrieveRows(nil)
 	}
 	if err != nil {
 		return err
 	}
-	Convert(fields, rows, result)
+	err = Convert(fields, rows, result)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
-// QueryWithChannel execute a given query with chan
+// ExecuteWithChannel execute a given query with chan
 // Channel has ResponseData that can be converted to optional struct array with Convert
-func (c *Client) QueryWithChannel(queryString string, size int64, resChan chan ResponseData) {
-	if c.JobConfig != nil {
-		go c.retrieveRowsWithJobConfig(queryString, size, resChan)
+func (q *Query) ExecuteWithChannel(resChan chan ResponseData) {
+	if q.JobConfig != nil {
+		go q.retrieveRowsWithJobConfig(resChan)
 	} else {
-		go c.retrieveRows(queryString, size, resChan)
+		go q.retrieveRows(resChan)
 	}
 }
 
-func (c *Client) retrieveRows(queryString string, size int64, receiver chan ResponseData) ([]*bigquery.TableFieldSchema, []*bigquery.TableRow, error) {
-	service, err := c.getService()
+func (q *Query) retrieveRows(receiver chan ResponseData) ([]*bigquery.TableFieldSchema, []*bigquery.TableRow, error) {
+	service, err := q.Client.getService()
 	if err != nil {
 		if receiver != nil {
 			receiver <- ResponseData{
@@ -155,13 +174,13 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 	}
 
 	query := &bigquery.QueryRequest{
-		DefaultDataset: c.datasetRef,
-		MaxResults:     size,
+		DefaultDataset: q.Client.datasetRef,
+		MaxResults:     q.size,
 		Kind:           "json",
-		Query:          queryString,
+		Query:          q.QueryString,
 	}
 
-	qr, err := service.Jobs.Query(c.datasetRef.ProjectId, query).Do()
+	qr, err := service.Jobs.Query(query.DefaultDataset.ProjectId, query).Do()
 	if err != nil {
 		if receiver != nil {
 			receiver <- ResponseData{
@@ -171,7 +190,7 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 		return nil, nil, err
 	}
 
-	if qr.JobComplete && qr.TotalRows <= uint64(size) {
+	if qr.JobComplete && qr.TotalRows <= uint64(q.size) {
 		if receiver != nil {
 			receiver <- ResponseData{
 				Fields: qr.Schema.Fields,
@@ -244,8 +263,8 @@ func (c *Client) retrieveRows(queryString string, size int64, receiver chan Resp
 	}
 }
 
-func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, receiver chan ResponseData) ([]*bigquery.TableFieldSchema, []*bigquery.TableRow, error) {
-	service, err := c.getService()
+func (q *Query) retrieveRowsWithJobConfig(receiver chan ResponseData) ([]*bigquery.TableFieldSchema, []*bigquery.TableRow, error) {
+	service, err := q.Client.getService()
 	if err != nil {
 		if receiver != nil {
 			receiver <- ResponseData{
@@ -256,13 +275,13 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 	}
 
 	jobConfigQuery := bigquery.JobConfigurationQuery{
-		Query: queryString,
+		Query: q.QueryString,
 	}
-	if c.JobConfig != nil {
-		jobConfigQuery.AllowLargeResults = c.JobConfig.AllowLargeResults
-		jobConfigQuery.WriteDisposition = string(c.JobConfig.WriteDisposition)
-		jobConfigQuery.CreateDisposition = string(c.JobConfig.CreateDisposition)
-		jobConfigQuery.DestinationTable = &bigquery.TableReference{DatasetId: c.datasetRef.DatasetId, ProjectId: c.datasetRef.ProjectId, TableId: c.JobConfig.TempTableName}
+	if q.JobConfig != nil {
+		jobConfigQuery.AllowLargeResults = q.JobConfig.AllowLargeResults
+		jobConfigQuery.WriteDisposition = string(q.JobConfig.WriteDisposition)
+		jobConfigQuery.CreateDisposition = string(q.JobConfig.CreateDisposition)
+		jobConfigQuery.DestinationTable = &bigquery.TableReference{DatasetId: q.Client.datasetRef.DatasetId, ProjectId: q.Client.datasetRef.ProjectId, TableId: q.JobConfig.TempTableName}
 	}
 
 	job := bigquery.Job{
@@ -271,12 +290,12 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 		},
 	}
 
-	insertedJob, err := service.Jobs.Insert(c.datasetRef.ProjectId, &job).Do()
+	insertedJob, err := service.Jobs.Insert(q.Client.datasetRef.ProjectId, &job).Do()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	qr, err := service.Jobs.GetQueryResults(c.datasetRef.ProjectId, insertedJob.JobReference.JobId).Do()
+	qr, err := service.Jobs.GetQueryResults(q.Client.datasetRef.ProjectId, insertedJob.JobReference.JobId).Do()
 	if err != nil {
 		if receiver != nil {
 			receiver <- ResponseData{
@@ -286,7 +305,7 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 		return nil, nil, err
 	}
 
-	if qr.JobComplete && qr.TotalRows <= uint64(size) {
+	if qr.JobComplete && qr.TotalRows <= uint64(len(qr.Rows)) {
 		if receiver != nil {
 			receiver <- ResponseData{
 				Fields: qr.Schema.Fields,
@@ -330,6 +349,10 @@ func (c *Client) retrieveRowsWithJobConfig(queryString string, size int64, recei
 		}
 
 		res := ResponseData{}
+
+		if qrr.Schema != nil {
+			res.Fields = qrr.Schema.Fields
+		}
 
 		if qrr.JobComplete {
 			rowCount += len(qrr.Rows)
@@ -381,6 +404,11 @@ func Convert(fields []*bigquery.TableFieldSchema, rows []*bigquery.TableRow, res
 			return errors.New("Invalid result element")
 		}
 		elemP := reflect.New(elemT)
+
+		if len(fields) != len(rows[i].F) {
+			return errors.New("Invalid fields")
+		}
+
 		for j := 0; j < len(rows[i].F); j++ {
 			elemF := elemP.Elem().Field(j)
 			var isSet bool
