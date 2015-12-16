@@ -527,7 +527,7 @@ func (c *Client) InsertRowsByJSON(tableID string, rows []map[string]interface{})
 	}
 
 	if len(result.InsertErrors) > 0 {
-		return errors.New("Failed to insert")
+		return errors.New("Failed to Insert")
 	}
 
 	return nil
